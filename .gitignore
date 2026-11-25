@@ -1,6 +1,9 @@
 # local build artifact
 *.zip
 
+# private project notes
+HANDOFF.md
+
 # OS junk
 Thumbs.db
 desktop.ini
