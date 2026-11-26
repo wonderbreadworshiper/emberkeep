@@ -1997,7 +1997,6 @@ function drawUpgradePath(i, x, y, w, h, t, live) {
   drawText(path.name, tx, y + 5, path.col, 1);
   if (main && maxed) {
     drawText('FULLY UPGRADED', tx, y + 15, P.gold, 1);
-    drawText('NO MORE TIERS', tx, y + 25, P.gray, 1);
   } else if (main) {
     var cur = def.levels[t.level - 1], nxt = def.levels[t.level];
     drawText('LEVEL ' + (t.level + 1), tx, y + 15, P.cream, 1);
