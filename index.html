@@ -158,6 +158,9 @@ var GLYPHS = {
   ':': [0, 0b01100, 0b01100, 0, 0b01100, 0b01100, 0],
   '/': [0b00001, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b10000],
   '-': [0, 0, 0, 0b11111, 0, 0, 0],
+  '=': [0, 0, 0b11111, 0, 0b11111, 0, 0],
+  '<': [0b00010, 0b00100, 0b01000, 0b10000, 0b01000, 0b00100, 0b00010],
+  '>': [0b01000, 0b00100, 0b00010, 0b00001, 0b00010, 0b00100, 0b01000],
   '+': [0, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0],
   '!': [0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0, 0b00100],
   '?': [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0, 0b00100],
@@ -1166,14 +1169,14 @@ function waveReward(wave, diffKey) {
 }
 
 function waveEnemyCount(wave) {
-  var row = WAVES[wave - 1] || [];
+  var row = waveRow(wave);
   var n = 0;
   for (var i = 0; i < row.length; i++) n += row[i][1];
   return n;
 }
 
 function waveSummary(wave) {
-  var row = WAVES[wave - 1] || [];
+  var row = waveRow(wave);
   var order = [];
   var counts = {};
   for (var i = 0; i < row.length; i++) {
@@ -1188,12 +1191,73 @@ function waveSummary(wave) {
   return out;
 }
 
+// ---------- endless mode ----------
+var ENDLESS = {
+  bossEvery: 5,
+  dragonEvery: 20
+};
+
+function isEndless() { return G.mode === 'endless'; }
+
+function bestKey() {
+  return isEndless() ? 'endless_' + G.diff : G.diff;
+}
+
+// Deterministic procedural wave for anything past the campaign. Same wave number
+// always produces the same horde, so runs are comparable.
+function endlessWaveRow(n) {
+  var depth = n - WAVES.length;
+  var seedA = hash(n * 7 + 3, 101);
+  var seedB = hash(n * 11 + 5, 211);
+  var gap = Math.max(0.26, 0.88 - depth * 0.016);
+  var row = [];
+
+  row.push(['gob', Math.min(34, 10 + Math.round(depth * 1.15)), gap, 0]);
+  row.push(['wolf', Math.min(24, 5 + Math.round(depth * 0.8)), Math.max(0.24, gap - 0.07), 1.1 + seedA * 1.6]);
+
+  if (seedB > 0.3) {
+    row.push(['orc', Math.min(16, 2 + Math.round(depth * 0.55)), Math.max(0.5, 1.05 - depth * 0.015), 2.4 + seedB * 2]);
+  }
+  if (seedA > 0.45) {
+    row.push(['slime', Math.min(14, 2 + Math.round(depth * 0.45)), Math.max(0.62, 1.15 - depth * 0.012), 3.6 + seedA]);
+  }
+  if (n % ENDLESS.bossEvery === 0) {
+    row.push(['ogre', 1 + Math.floor(depth / 25), 4.5, 0.5]);
+  }
+  if (n % ENDLESS.dragonEvery === 0) {
+    row.push(['dragon', 1 + Math.floor(n / 60), 5.5, 1.6]);
+  }
+  return row;
+}
+
+function waveRow(n) {
+  if (n <= WAVES.length) return WAVES[n - 1] || [];
+  return endlessWaveRow(n);
+}
+
+function waveHasBoss(wave) {
+  if (wave <= WAVES.length) {
+    var row = WAVES[wave - 1] || [];
+    for (var i = 0; i < row.length; i++) {
+      if (ENEMIES[row[i][0]].boss) return true;
+    }
+    return false;
+  }
+  var gen = endlessWaveRow(wave);
+  for (var j = 0; j < gen.length; j++) {
+    if (ENEMIES[gen[j][0]].boss) return true;
+  }
+  return false;
+}
+
 
 var STORE_KEY = 'emberkeep_v1';
 
 var G = {
   phase: 'menu',
   diff: 'normal',
+  mode: 'campaign',
+  menuMode: 'campaign',
   gold: 0,
   lives: 0,
   wave: 0,
@@ -1219,7 +1283,8 @@ var G = {
   time: 0,
   best: {},
   muted: false,
-  lastDiff: 'normal'
+  lastDiff: 'normal',
+  lastMode: 'campaign'
 };
 
 function loadBest() {
@@ -1233,21 +1298,24 @@ function loadBest() {
 
 function saveBest() {
   try {
-    var d = G.diff;
-    var rec = G.best[d] || { wave: 0, won: false };
+    var key = bestKey();
+    var rec = G.best[key] || { wave: 0, won: false };
     if (G.wave > rec.wave) rec.wave = G.wave;
     if (G.phase === 'win') rec.won = true;
-    G.best[d] = rec;
+    G.best[key] = rec;
     localStorage.setItem(STORE_KEY, JSON.stringify(G.best));
   } catch (e) {}
 }
 
-function newRun(diffKey) {
+function newRun(diffKey, mode) {
   diffKey = DIFFS[diffKey] ? diffKey : 'normal';
+  mode = mode === 'endless' ? 'endless' : 'campaign';
   var d = DIFFS[diffKey];
   G.phase = 'play';
   G.diff = diffKey;
+  G.mode = mode;
   G.lastDiff = diffKey;
+  G.lastMode = mode;
   G.gold = d.gold;
   G.lives = d.lives;
   G.wave = 0;
@@ -1271,7 +1339,9 @@ function newRun(diffKey) {
   G.flash = 0;
   G.time = 0;
   SB.anim = 0; SB.tower = null;
-  G.banner = { text: 'BUILD YOUR DEFENSE', sub: 'THEN PRESS START WAVE', life: 3.2, max: 3.2 };
+  G.banner = mode === 'endless'
+    ? { text: 'ENDLESS SIEGE', sub: 'HOW LONG CAN YOU HOLD?', life: 3.2, max: 3.2 }
+    : { text: 'BUILD YOUR DEFENSE', sub: 'THEN PRESS START WAVE', life: 3.2, max: 3.2 };
   SFX.play('wave');
 }
 
@@ -1355,6 +1425,20 @@ function upgradeSelected(path) {
   }
 }
 
+function upgradeCheapest() {
+  var t = G.selected;
+  if (!t || G.phase !== 'play') return;
+  var def = TOWERS[t.type], best = -1, bestCost = Infinity;
+  for (var i = 0; i < def.paths.length; i++) {
+    var tier = t.up[i];
+    if (tier >= SB.tiers) continue;
+    var cost = def.paths[i].cost[tier];
+    if (cost < bestCost) { bestCost = cost; best = i; }
+  }
+  if (best < 0) { SFX.play('error'); return; }
+  upgradeSelected(best);
+}
+
 function sellSelected() {
   var t = G.selected;
   if (!t || G.phase !== 'play') return;
@@ -1422,11 +1506,11 @@ function spawnEnemy(type, hpMul, startDist) {
 
 function startWave() {
   if (G.phase !== 'play' || G.waveActive) return;
-  if (G.wave >= WAVES.length) return;
+  if (!isEndless() && G.wave >= WAVES.length) return;
   G.wave++;
   G.waveActive = true;
   G.waveTime = 0;
-  var row = WAVES[G.wave - 1];
+  var row = waveRow(G.wave);
   var hpMul = waveHpMul(G.wave, G.diff);
   var list = [];
   for (var i = 0; i < row.length; i++) {
@@ -1437,9 +1521,19 @@ function startWave() {
   }
   list.sort(function (a, b) { return a.t - b.t; });
   G.spawns = list;
+
+  var sub;
+  if (isEndless()) {
+    if (G.wave % ENDLESS.dragonEvery === 0) sub = 'A DRAGON STIRS';
+    else if (G.wave % ENDLESS.bossEvery === 0) sub = 'AN OGRE WARBAND';
+    else sub = waveEnemyCount(G.wave) + ' ENEMIES APPROACH';
+  } else {
+    sub = G.wave === WAVES.length ? 'THE DRAGON COMES' : (waveEnemyCount(G.wave) + ' ENEMIES APPROACH');
+  }
+
   G.banner = {
     text: 'WAVE ' + G.wave,
-    sub: G.wave === WAVES.length ? 'THE DRAGON COMES' : (waveEnemyCount(G.wave) + ' ENEMIES APPROACH'),
+    sub: sub,
     life: 2.2,
     max: 2.2
   };
@@ -1735,12 +1829,17 @@ function update(dt) {
     var reward = waveReward(G.wave, G.diff);
     G.gold += reward;
     G.goldEarned += reward;
-    if (G.wave >= WAVES.length) {
+    if (!isEndless() && G.wave >= WAVES.length) {
       winRun();
     } else {
-      G.banner = { text: 'WAVE CLEARED', sub: '+' + reward + ' GOLD', life: 2.0, max: 2.0 };
+      if (isEndless() && G.wave === WAVES.length) {
+        G.banner = { text: 'ENDLESS BEGINS', sub: 'THE HORDE KEEPS COMING', life: 2.6, max: 2.6 };
+        SFX.play('win');
+      } else {
+        G.banner = { text: 'WAVE CLEARED', sub: '+' + reward + ' GOLD', life: 2.0, max: 2.0 };
+        SFX.play('upgrade');
+      }
       addFloater(320, 170, '+' + reward + ' GOLD', P.gold, 2);
-      SFX.play('upgrade');
     }
   }
 }
@@ -1824,8 +1923,8 @@ function drawHud() {
   drawHeart(86, 10);
   drawText(String(G.lives), 102, 11, G.lives <= 5 ? P.red : P.cream, 2, 'left', '#4a1c22');
 
-  drawText('WAVE', 158, 6, P.gray, 1);
-  drawText(('0' + G.wave).slice(-2) + '/' + WAVES.length, 158, 15, P.cream, 2, 'left', '#241f2e');
+  drawText(isEndless() ? 'ENDLESS' : 'WAVE', 158, 6, isEndless() ? P.gold2 : P.gray, 1);
+  drawText(isEndless() ? String(G.wave) : ('0' + G.wave).slice(-2) + '/' + WAVES.length, 158, 15, P.cream, 2, 'left', '#241f2e');
 
   drawSkullIcon(232, 11);
   drawText(String(G.kills), 246, 11, P.cream, 2, 'left', '#241f2e');
@@ -1938,12 +2037,20 @@ function drawUpcomingInfo(x, y, w) {
     drawText('DEFEND THE KEEP!', x, y + 24, P.gray, 1);
     return;
   }
-  if (nextWave > WAVES.length) {
+  if (!isEndless() && nextWave > WAVES.length) {
     drawText('ALL WAVES CLEARED', x, y, P.gold, 1);
     return;
   }
-  drawText((nextWave === WAVES.length ? 'FINAL WAVE ' : 'NEXT: WAVE ') + nextWave, x, y, nextWave === WAVES.length ? P.red : P.cream, 1);
-  var lines = packSummary(WAVES[nextWave - 1], 30);
+  var title;
+  if (isEndless() && nextWave > WAVES.length) {
+    if (nextWave % ENDLESS.dragonEvery === 0) title = 'NEXT: WAVE ' + nextWave + ' DRAGON';
+    else if (nextWave % ENDLESS.bossEvery === 0) title = 'NEXT: WAVE ' + nextWave + ' OGRE';
+    else title = 'NEXT: WAVE ' + nextWave;
+  } else {
+    title = (nextWave === WAVES.length ? 'FINAL WAVE ' : 'NEXT: WAVE ') + nextWave;
+  }
+  drawText(title, x, y, nextWave === WAVES.length ? P.red : P.cream, 1);
+  var lines = packSummary(nextWave, 30);
   for (var i = 0; i < lines.length && i < 2; i++) {
     drawText(lines[i], x, y + 8 + i * 8, P.gray, 1);
   }
@@ -2106,7 +2213,7 @@ function drawWaveButton() {
     uiBtn(x, y, w, h, 'WAVE ' + G.wave, { sub: 'IN PROGRESS', disabled: true, bg: '#2b2634', subCol: P.gray });
     return;
   }
-  if (G.wave >= WAVES.length) {
+  if (!isEndless() && G.wave >= WAVES.length) {
     uiBtn(x, y, w, h, 'ALL CLEAR', { disabled: true, sub: 'VICTORY' });
     return;
   }
@@ -2114,7 +2221,7 @@ function drawWaveButton() {
   ctx.fillStyle = 'rgba(142,209,90,' + (pulse * 0.14).toFixed(3) + ')';
   ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
   uiBtn(x, y, w, h, 'START WAVE', {
-    sub: 'SPACE',
+    sub: isEndless() && G.wave >= WAVES.length ? 'ENDLESS' : 'SPACE',
     bg: '#35503a',
     fg: P.white,
     subCol: P.greenHi,
@@ -2233,8 +2340,28 @@ function drawMenu(time) {
   cornerMarks(174, 40, 292, 116, P.gold2);
   drawText('EMBERKEEP', 320, 56, P.gold, 4, 'center', '#4a2f08');
   drawText('TOWER DEFENSE', 320, 102, P.cream, 2, 'center', '#241f2e');
-  drawText('20 WAVES  -  ONE KEEP', 320, 128, P.gray, 1, 'center');
+  drawText(G.menuMode === 'endless' ? 'ENDLESS SIEGE  -  NO MERCY' : '20 WAVES  -  ONE KEEP', 320, 128, G.menuMode === 'endless' ? P.gold2 : P.gray, 1, 'center');
   r(210, 144, 220, 1, 'rgba(255,207,92,0.35)');
+
+  // mode tabs
+  var modes = [
+    { key: 'campaign', label: 'CAMPAIGN' },
+    { key: 'endless', label: 'ENDLESS' }
+  ];
+  var tw = 108, th = 16, tgap = 10;
+  var tstart = (W - (tw * 2 + tgap)) / 2;
+  for (var m = 0; m < modes.length; m++) {
+    var md = modes[m];
+    var mx = tstart + m * (tw + tgap), my = 162;
+    var active = G.menuMode === md.key;
+    var mhov = hovered(mx, my, tw, th);
+    r(mx, my, tw, th, active ? P.gold : (mhov ? P.cream : P.ink));
+    r(mx + 1, my + 1, tw - 2, th - 2, active ? '#3a3040' : P.stoneD);
+    drawText(md.label, mx + tw / 2, my + 5, active ? P.gold : (mhov ? P.cream : P.gray), 1, 'center');
+    addHit(mx, my, tw, th, (function (mk) {
+      return function () { G.menuMode = mk; SFX.play('click'); };
+    })(md.key));
+  }
 
   // difficulty buttons
   var keys = ['easy', 'normal', 'hard'];
@@ -2245,23 +2372,28 @@ function drawMenu(time) {
     var key = keys[k];
     var def = DIFFS[key];
     var bx = startX + k * (bw + gap);
-    var by = 178;
+    var by = 186;
     var hov = hovered(bx, by, bw, bh);
-    var rec = G.best[key];
-    var bestLine = rec ? (rec.won ? 'CLEARED' : 'BEST WAVE ' + rec.wave) : 'NOT TRIED';
+    var rec = G.best[G.menuMode === 'endless' ? 'endless_' + key : key];
+    var bestLine;
+    if (G.menuMode === 'endless') {
+      bestLine = rec && rec.wave ? 'BEST WAVE ' + rec.wave : 'NOT TRIED';
+    } else {
+      bestLine = rec ? (rec.won ? 'CLEARED' : 'BEST WAVE ' + rec.wave) : 'NOT TRIED';
+    }
     r(bx, by, bw, bh, hov ? P.gold2 : P.ink);
     r(bx + 1, by + 1, bw - 2, bh - 2, hov ? '#3c3448' : P.stoneD);
     r(bx + 1, by + 1, bw - 2, 1, 'rgba(255,255,255,0.12)');
     drawText(def.name, bx + bw / 2, by + 6, hov ? P.gold : P.cream, 2, 'center');
     drawText(def.blurb, bx + bw / 2, by + 26, P.gray, 1, 'center');
     drawText(bestLine, bx + bw / 2, by + 36, rec && rec.won ? P.greenHi : P.gold2, 1, 'center');
-    addHit(bx, by, bw, bh, (function (kk) {
-      return function () { newRun(kk); SFX.play('click'); };
-    })(key));
+    addHit(bx, by, bw, bh, (function (kk, mm) {
+      return function () { newRun(kk, mm); SFX.play('click'); };
+    })(key, G.menuMode));
   }
 
-  drawText('1-4 BUILD   SPACE START WAVE   P PAUSE   S SPEED   ESC CANCEL', W / 2, 250, P.gray, 1, 'center');
-  drawText('CLICK A DIFFICULTY TO BEGIN', W / 2, 274, 'rgba(242,237,220,0.5)', 1, 'center');
+  drawText('1-4 BUILD   SPACE START WAVE   P PAUSE   S SPEED   ESC CANCEL', W / 2, 252, P.gray, 1, 'center');
+  drawText(G.menuMode === 'endless' ? 'SURVIVE AS LONG AS YOU CAN' : 'CLICK A DIFFICULTY TO BEGIN', W / 2, 276, 'rgba(242,237,220,0.5)', 1, 'center');
 
   // sound toggle
   r(0, BAR_Y, W, H - BAR_Y, 'rgba(13,10,18,0.88)');
@@ -2271,7 +2403,7 @@ function drawMenu(time) {
     icon: 'sound',
     fn: function () { G.muted = !G.muted; SFX.muted = G.muted; SFX.play('click'); }
   });
-  drawText('EMBERKEEP V1.0', 8, 331, '#4a4557', 1);
+  drawText('EMBERKEEP V1.1', 8, 331, '#4a4557', 1);
 }
 
 function overlay(alpha, col) {
@@ -2287,7 +2419,7 @@ function drawPause() {
   drawText('PAUSED', W / 2, y + 12, P.gold, 3, 'center', '#3a2408');
   var bx = x + 60, bw = w - 120;
   uiBtn(bx, y + 52, bw, 26, 'RESUME', { bg: '#35503a', fn: function () { G.phase = 'play'; SFX.play('click'); } });
-  uiBtn(bx, y + 84, bw, 26, 'RESTART', { fn: function () { newRun(G.lastDiff); SFX.play('click'); } });
+  uiBtn(bx, y + 84, bw, 26, 'RESTART', { fn: function () { newRun(G.lastDiff, G.lastMode); SFX.play('click'); } });
   uiBtn(bx, y + 116, bw, 26, G.muted ? 'SOUND: OFF' : 'SOUND: ON', {
     fn: function () { G.muted = !G.muted; SFX.muted = G.muted; SFX.play('click'); }
   });
@@ -2301,16 +2433,17 @@ function drawPause() {
 
 function drawEnd() {
   var won = G.phase === 'win';
+  var endless = isEndless();
   overlay(0.68, won ? '14,11,6' : '16,6,8');
   var x = 158, y = 54, w = 324, h = 250;
   panel(x, y, w, h, won ? '#211b10' : '#1e131a', won ? P.gold2 : P.red2, won ? P.gold2 : P.red);
   cornerMarks(x, y, w, h, won ? P.gold : P.red);
   drawText(won ? 'VICTORY!' : 'DEFEAT', W / 2, y + 16, won ? P.gold : P.red, 4, 'center', '#2a0d0d');
-  drawText(won ? 'ALL 20 WAVES REPELLED' : 'THE KEEP HAS FALLEN', W / 2, y + 62, P.cream, 1, 'center');
+  drawText(won ? 'ALL 20 WAVES REPELLED' : (endless ? 'ENDLESS SIEGE OVER' : 'THE KEEP HAS FALLEN'), W / 2, y + 62, P.cream, 1, 'center');
   r(x + 40, y + 78, w - 80, 1, 'rgba(255,255,255,0.14)');
 
   var lines = [
-    'WAVES  ' + G.wave + ' / ' + WAVES.length,
+    endless ? 'WAVES SURVIVED  ' + G.wave : 'WAVES  ' + G.wave + ' / ' + WAVES.length,
     'KILLS  ' + G.kills,
     'GOLD EARNED  ' + G.goldEarned,
     'DIFFICULTY  ' + DIFFS[G.diff].name
@@ -2318,19 +2451,19 @@ function drawEnd() {
   for (var i = 0; i < lines.length; i++) {
     drawText(lines[i], W / 2, y + 92 + i * 12, P.cream, 1, 'center');
   }
-  var best = G.best[G.diff];
+  var best = G.best[bestKey()];
   if (best) drawText('BEST  WAVE ' + best.wave + (best.won ? '  CLEARED' : ''), W / 2, y + 146, P.gold2, 1, 'center');
 
   var bw = 120, gap = 16;
   var startX = W / 2 - bw - gap / 2;
   uiBtn(startX, y + 166, bw, 28, won ? 'PLAY AGAIN' : 'TRY AGAIN', {
     bg: won ? '#35503a' : '#4a2a30',
-    fn: function () { newRun(G.lastDiff); SFX.play('click'); }
+    fn: function () { newRun(G.lastDiff, G.lastMode); SFX.play('click'); }
   });
   uiBtn(startX + bw + gap, y + 166, bw, 28, 'MENU', {
     fn: function () { G.phase = 'menu'; loadBest(); SFX.play('click'); }
   });
-  drawText(won ? 'THE KEEP STANDS.' : 'BUILD SMARTER NEXT TIME.', W / 2, y + 212, P.gray, 1, 'center');
+  drawText(won ? 'THE KEEP STANDS.' : (endless ? 'THE HORDE ALWAYS WINS.' : 'BUILD SMARTER NEXT TIME.'), W / 2, y + 212, P.gray, 1, 'center');
 }
 
 
@@ -2480,7 +2613,7 @@ window.addEventListener('keydown', function (e) {
   if (G.phase === 'menu') {
     if (k === 'enter' || k === ' ') {
       e.preventDefault();
-      newRun(G.lastDiff);
+      newRun(G.lastDiff, G.menuMode);
       SFX.play('click');
     }
     return;
@@ -2493,7 +2626,7 @@ window.addEventListener('keydown', function (e) {
   }
 
   if (G.phase === 'over' || G.phase === 'win') {
-    if (k === 'r' || k === 'enter') newRun(G.lastDiff);
+    if (k === 'r' || k === 'enter') newRun(G.lastDiff, G.lastMode);
     if (k === 'b') { G.phase = 'menu'; loadBest(); }
     return;
   }
@@ -2510,6 +2643,8 @@ window.addEventListener('keydown', function (e) {
     G.selected = null;
   } else if (k === 's') {
     G.speed = G.speed === 1 ? 2 : 1;
+  } else if (k === 'u') {
+    upgradeCheapest();
   } else if (k === 'x') {
     sellSelected();
   } else if (k === 'p') {
@@ -2547,6 +2682,7 @@ resize();
 loadBest();
 window.addEventListener('resize', resize);
 if (location.hash === '#play') newRun('normal');
+if (location.hash === '#endless') newRun('normal', 'endless');
 
 // debug / test hooks
 window.EMBER = {
@@ -2569,6 +2705,14 @@ window.EMBER = {
   selectBuild: selectBuild,
   upgradeSelected: upgradeSelected,
   sellSelected: sellSelected,
+  waveRow: waveRow,
+  waveSummary: waveSummary,
+  waveHpMul: waveHpMul,
+  waveReward: waveReward,
+  waveHasBoss: waveHasBoss,
+  bestKey: bestKey,
+  saveBest: saveBest,
+  loseRun: loseRun,
   fastForward: function (seconds) {
     var steps = Math.round(seconds * 60);
     for (var i = 0; i < steps; i++) {
