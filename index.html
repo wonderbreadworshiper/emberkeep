@@ -1050,12 +1050,12 @@ var TOWERS = {
     hotkey: '1',
     color: P.greenHi,
     blurb: 'FAST, CHEAP, RELIABLE',
-    levels: [
-      { dmg: 8,  range: 78, rate: 0.55, splash: 0, slow: 0, chain: 0 },
-      { dmg: 14, range: 88, rate: 0.48, splash: 0, slow: 0, chain: 0 },
-      { dmg: 24, range: 98, rate: 0.40, splash: 0, slow: 0, chain: 0 }
-    ],
-    upCost: [110, 170]
+    base: { dmg: 8, range: 78, rate: 0.55, splash: 0, slow: 0, chain: 0 },
+    paths: [
+      { stat: 'range', tiers: [{ range: 86 }, { range: 94 }, { range: 104 }], cost: [60, 90, 130] },
+      { stat: 'dmg',   tiers: [{ dmg: 12 }, { dmg: 17 }, { dmg: 25 }],        cost: [70, 110, 170] },
+      { stat: 'rate',  tiers: [{ rate: 0.47 }, { rate: 0.40 }, { rate: 0.32 }], cost: [70, 100, 150] }
+    ]
   },
   cannon: {
     name: 'CANNON',
@@ -1063,12 +1063,12 @@ var TOWERS = {
     hotkey: '2',
     color: P.orange,
     blurb: 'SLOW SPLASH DAMAGE',
-    levels: [
-      { dmg: 26, range: 88, rate: 1.45, splash: 30, slow: 0, chain: 0 },
-      { dmg: 42, range: 96, rate: 1.35, splash: 34, slow: 0, chain: 0 },
-      { dmg: 64, range: 104, rate: 1.20, splash: 40, slow: 0, chain: 0 }
-    ],
-    upCost: [170, 240]
+    base: { dmg: 26, range: 88, rate: 1.45, splash: 30, slow: 0, chain: 0 },
+    paths: [
+      { stat: 'range', tiers: [{ range: 95, splash: 32 }, { range: 102, splash: 35 }, { range: 110, splash: 38 }], cost: [90, 130, 180] },
+      { stat: 'dmg',   tiers: [{ dmg: 38 }, { dmg: 52 }, { dmg: 70 }],         cost: [100, 150, 220] },
+      { stat: 'rate',  tiers: [{ rate: 1.25 }, { rate: 1.08 }, { rate: 0.92 }], cost: [100, 150, 210] }
+    ]
   },
   frost: {
     name: 'FROST',
@@ -1076,12 +1076,12 @@ var TOWERS = {
     hotkey: '3',
     color: P.cyan,
     blurb: 'CHILLS THE WHOLE CROWD',
-    levels: [
-      { dmg: 5,  range: 74, rate: 1.25, splash: 0, slow: 0.45, slowDur: 1.6, chain: 0 },
-      { dmg: 8,  range: 84, rate: 1.15, splash: 0, slow: 0.55, slowDur: 1.8, chain: 0 },
-      { dmg: 12, range: 94, rate: 1.00, splash: 0, slow: 0.65, slowDur: 2.0, chain: 0 }
-    ],
-    upCost: [140, 200]
+    base: { dmg: 5, range: 74, rate: 1.25, splash: 0, slow: 0.45, slowDur: 1.6, chain: 0 },
+    paths: [
+      { stat: 'range', tiers: [{ range: 82 }, { range: 90 }, { range: 98 }], cost: [70, 100, 140] },
+      { stat: 'dmg',   tiers: [{ dmg: 8 }, { dmg: 12 }, { dmg: 17 }], cost: [80, 120, 170] },
+      { stat: 'slow',  tiers: [{ slow: 0.52, slowDur: 1.8 }, { slow: 0.58, slowDur: 2.0 }, { slow: 0.65, slowDur: 2.2 }], cost: [80, 110, 160] }
+    ]
   },
   mage: {
     name: 'MAGE',
@@ -1089,14 +1089,32 @@ var TOWERS = {
     hotkey: '4',
     color: P.purple,
     blurb: 'CHAIN LIGHTNING, IGNORES ARMOR',
-    levels: [
-      { dmg: 17, range: 92, rate: 1.25, splash: 0, slow: 0, chain: 2, chainFall: 0.65 },
-      { dmg: 27, range: 102, rate: 1.10, splash: 0, slow: 0, chain: 3, chainFall: 0.70 },
-      { dmg: 42, range: 112, rate: 0.95, splash: 0, slow: 0, chain: 4, chainFall: 0.75 }
-    ],
-    upCost: [200, 290]
+    base: { dmg: 17, range: 92, rate: 1.25, splash: 0, slow: 0, chain: 2, chainFall: 0.65 },
+    paths: [
+      { stat: 'range', tiers: [{ range: 100 }, { range: 108 }, { range: 118 }], cost: [100, 150, 210] },
+      { stat: 'dmg',   tiers: [{ dmg: 24 }, { dmg: 33, chain: 3, chainFall: 0.70 }, { dmg: 45, chain: 4, chainFall: 0.75 }], cost: [110, 170, 250] },
+      { stat: 'rate',  tiers: [{ rate: 1.08 }, { rate: 0.92 }, { rate: 0.78 }], cost: [110, 160, 230] }
+    ]
   }
 };
+
+function upTotal(t) { return t.up[0] + t.up[1] + t.up[2]; }
+
+function refreshTower(t) {
+  var def = TOWERS[t.type];
+  var st = {};
+  var key;
+  for (key in def.base) st[key] = def.base[key];
+  for (var i = 0; i < def.paths.length; i++) {
+    if (t.up[i] > 0) {
+      var tier = def.paths[i].tiers[t.up[i] - 1];
+      for (key in tier) st[key] = tier[key];
+    }
+  }
+  t.st = st;
+  var n = upTotal(t);
+  t.level = 1 + (n >= 2 ? 1 : 0) + (n >= 5 ? 1 : 0);
+}
 
 var ENEMIES = {
   gob:      { name: 'GOBLIN', hp: 26,   speed: 27, gold: 5,   armor: 0, r: 7,  h: 16, boss: false },
@@ -1287,11 +1305,13 @@ function placeTower(c, row, type) {
     return false;
   }
   G.gold -= def.cost;
-  G.towers.push({
-    type: type, level: 1, c: c, r: row,
+  var tower = {
+    type: type, level: 1, up: [0, 0, 0], st: null, c: c, r: row,
     x: px, y: py, cd: 0, ang: -Math.PI / 2,
     invested: def.cost, kills: 0, recoil: 0
-  });
+  };
+  refreshTower(tower);
+  G.towers.push(tower);
   SFX.play('build');
   for (var i = 0; i < 8; i++) {
     G.particles.push({
@@ -1304,11 +1324,14 @@ function placeTower(c, row, type) {
   return true;
 }
 
-function upgradeSelected() {
+function upgradeSelected(path) {
   var t = G.selected;
   if (!t || G.phase !== 'play') return;
-  if (t.level >= 3) { SFX.play('error'); return; }
-  var cost = TOWERS[t.type].upCost[t.level - 1];
+  var p = TOWERS[t.type].paths[path];
+  if (!p) return;
+  var tier = t.up[path];
+  if (tier >= SB.tiers) { SFX.play('error'); return; }
+  var cost = p.cost[tier];
   if (G.gold < cost) {
     SFX.play('error');
     addFloater(t.x, t.y - 26, 'NOT ENOUGH GOLD', P.red, 1);
@@ -1316,9 +1339,12 @@ function upgradeSelected() {
   }
   G.gold -= cost;
   t.invested += cost;
-  t.level++;
+  t.up[path]++;
+  refreshTower(t);
   SFX.play('upgrade');
-  addFloater(t.x, t.y - 28, 'LEVEL ' + t.level, P.gold, 1);
+  var pathName = p.stat === 'slow' ? 'SLOW' : SB_PATHS[path].name;
+  var pathCol = p.stat === 'slow' ? TOWERS.frost.color : SB_PATHS[path].col;
+  addFloater(t.x, t.y - 28, pathName + ' ' + t.up[path], pathCol, 1);
   for (var i = 0; i < 12; i++) {
     G.particles.push({
       x: t.x + rnd(-8, 8), y: t.y + rnd(-20, 4),
@@ -1575,11 +1601,10 @@ function updateEnemies(dt) {
 
 function updateTowers(dt) {
   for (var i = 0; i < G.towers.length; i++) {
-    var t = G.towers[i];
-    var def = TOWERS[t.type];
-    var st = def.levels[t.level - 1];
-    if (t.cd > 0) t.cd -= dt;
-    if (t.recoil > 0) t.recoil = Math.max(0, t.recoil - dt * 4);
+  var t = G.towers[i];
+  var st = t.st;
+  if (t.cd > 0) t.cd -= dt;
+  if (t.recoil > 0) t.recoil = Math.max(0, t.recoil - dt * 4);
     var target = null, bestDist = -1;
     for (var j = 0; j < G.enemies.length; j++) {
       var e = G.enemies[j];
@@ -1727,11 +1752,6 @@ function updateCursor() {
     var h = hits[i];
     if (inRect(mouse.x, mouse.y, h.x, h.y, h.w, h.h)) { cur = 'pointer'; break; }
   }
-  for (var i = 0; i < hits.length; i++) {
-  var h = hits[i];
-  if (h.quiet) continue;
-  if (inRect(mouse.x, mouse.y, h.x, h.y, h.w, h.h)) { cur = 'pointer'; break; }
-}
   if (cur !== 'pointer' && G.phase === 'play') {
     var tile = tileFromPoint(mouse.x, mouse.y);
     if (tile && towerAt(tile.c, tile.r)) cur = 'pointer';
@@ -1901,7 +1921,7 @@ function drawShop() {
 function drawSelectedInfo(x, y, w) {
   var t = G.selected;
   var def = TOWERS[t.type];
-  var st = def.levels[t.level - 1];
+  var st = t.st;
   drawText(def.name + '  LVL ' + t.level + '/3', x, y, def.color, 1);
   drawText('DMG ' + st.dmg + (st.splash ? '  AOE ' + st.splash : (st.chain ? '  CHAIN ' + st.chain : (st.slow ? '  SLOW ' + Math.round(st.slow * 100) + '%' : ''))), x, y + 8, P.cream, 1);
   drawText('RNG ' + st.range + '  RATE ' + st.rate.toFixed(2) + 'S', x, y + 16, P.cream, 1);
@@ -1960,7 +1980,7 @@ function drawInfoPanel() {
     drawSelectedInfo(x + 4, y + 2, w - 8);
   } else if (hovType) {
     var def = TOWERS[hovType];
-    var lv = def.levels[0];
+    var lv = def.base;
     drawText(def.name + '  $' + def.cost, x + 4, y + 2, def.color, 1);
     drawText(def.blurb, x + 4, y + 10, P.gray, 1);
     drawText('DMG ' + lv.dmg + '  RNG ' + lv.range + '  RATE ' + lv.rate.toFixed(2), x + 4, y + 18, P.cream, 1);
@@ -1970,58 +1990,53 @@ function drawInfoPanel() {
   }
 }
 
-var SB = { w: 150, tiers: 5, anim: 0, last: 0, side: 1, tower: null };
+var SB = { w: 150, tiers: 3, anim: 0, last: 0, side: 1, tower: null };
 
 var SB_PATHS = [
-  { name: 'MAIN PATH', col: P.greenHi, main: true },
-  { name: 'PATH 2',    col: P.gold,    main: false },
-  { name: 'PATH 3',    col: P.cyan,    main: false }
+  { name: 'RANGE',  col: P.purple },
+  { name: 'DAMAGE', col: P.orange },
+  { name: 'SPEED',  col: P.greenHi }
 ];
 
 function drawUpgradePath(i, x, y, w, h, t, live) {
   var path = SB_PATHS[i];
   var def = TOWERS[t.type];
-  var main = path.main;
-  var maxed = main && t.level >= 3;
-  var cost = main && !maxed ? def.upCost[t.level - 1] : 0;
-  var afford = main && !maxed && G.gold >= cost;
-  var hov = live && main && !maxed && hovered(x, y, w, h);
+  var up = def.paths[i];
+  var isSlow = up.stat === 'slow';
+  var pathCol = isSlow ? TOWERS.frost.color : path.col;
+  var tier = t.up[i];
+  var maxed = tier >= SB.tiers;
+  var cost = maxed ? 0 : up.cost[tier];
+  var afford = !maxed && G.gold >= cost;
+  var hov = live && !maxed && hovered(x, y, w, h);
+  var label = { range: 'RNG', dmg: 'DMG', rate: 'RATE', slow: 'SLOW' };
 
   r(x, y, w, h, hov ? P.gold : P.ink);
-  r(x + 1, y + 1, w - 2, h - 2, main ? (afford ? '#2c4130' : '#26222f') : '#1a1621');
+  r(x + 1, y + 1, w - 2, h - 2, afford ? '#2c4130' : '#26222f');
   r(x + 1, y + 1, w - 2, 1, 'rgba(255,255,255,0.10)');
-  r(x + 1, y + 1, 4, h - 2, main ? path.col : '#3a3446');
+  r(x + 1, y + 1, 4, h - 2, pathCol);
 
   var tx = x + 10;
-  ctx.globalAlpha = main ? 1 : 0.6;
-  drawText(path.name, tx, y + 5, path.col, 1);
-  if (main && maxed) {
+  drawText(isSlow ? 'SLOW' : path.name, tx, y + 5, pathCol, 1);
+  if (maxed) {
     drawText('FULLY UPGRADED', tx, y + 15, P.gold, 1);
-  } else if (main) {
-    var cur = def.levels[t.level - 1], nxt = def.levels[t.level];
-    drawText('LEVEL ' + (t.level + 1), tx, y + 15, P.cream, 1);
-    drawText('DMG ' + cur.dmg + ' > ' + nxt.dmg, tx, y + 25, P.gray, 1);
   } else {
-    drawText('LOCKED', tx, y + 15, P.gray, 1);
-    drawText('COMING SOON', tx, y + 25, P.gray2, 1);
-    var lx = x + w - 12, ly = y + 5;
-    r(lx + 2, ly, 3, 1, P.gray); r(lx + 1, ly + 1, 1, 2, P.gray); r(lx + 5, ly + 1, 1, 2, P.gray);
-    r(lx, ly + 3, 7, 5, P.gray2); r(lx + 3, ly + 5, 1, 2, P.ink);
+    var cur = t.st[up.stat], nxt = up.tiers[tier][up.stat];
+    var fmt = function (v) { return up.stat === 'rate' ? v.toFixed(2) : up.stat === 'slow' ? Math.round(v * 100) + '%' : String(v); };
+    drawText('TIER ' + (tier + 1), tx, y + 15, P.cream, 1);
+    drawText(label[up.stat] + ' ' + fmt(cur) + ' > ' + fmt(nxt), tx, y + 25, P.gray, 1);
   }
-  ctx.globalAlpha = 1;
 
   for (var k = 0; k < SB.tiers; k++) {
-    var filled = main && k < t.level;
-    var avail = main && k < 3;
     r(tx + k * 12, y + h - 9, 10, 4, P.ink);
-    r(tx + k * 12 + 1, y + h - 8, 8, 2, filled ? P.gold : (avail ? '#4a4557' : '#2a2532'));
+    r(tx + k * 12 + 1, y + h - 8, 8, 2, k < tier ? P.gold : '#4a4557');
   }
 
-  var tag = main ? (maxed ? 'MAX' : '$' + cost) : '$---';
-  var tcol = main ? (maxed ? P.gold : (afford ? P.gold : P.red)) : P.gray2;
+  var tag = maxed ? 'MAX' : '$' + cost;
+  var tcol = maxed || afford ? P.gold : P.red;
   drawText(tag, x + w - 5, y + h - 11, tcol, 1, 'right');
 
-  if (live && main) addHit(x, y, w, h, upgradeSelected);
+  if (live && !maxed) addHit(x, y, w, h, function () { upgradeSelected(i); });
 }
 
 function drawUpgradeSidebar() {
@@ -2142,7 +2157,7 @@ function drawBuildGhost() {
   var afford = G.gold >= TOWERS[G.buildType].cost;
   var col = ok && afford ? P.greenHi : P.red;
   if (ok && !afford) col = P.orange;
-  drawRangeCircle(cx, cy, TOWERS[G.buildType].levels[0].range, col);
+  drawRangeCircle(cx, cy, TOWERS[G.buildType].base.range, col);
   ctx.fillStyle = ok ? 'rgba(142,209,90,0.22)' : 'rgba(224,82,79,0.28)';
   ctx.fillRect(tile.c * TILE, FY + tile.r * TILE, TILE, TILE);
   ctx.globalAlpha = 0.6;
@@ -2159,8 +2174,7 @@ function drawBuildGhost() {
 function drawSelection() {
   var t = G.selected;
   if (t && G.towers.indexOf(t) >= 0) {
-    var st = TOWERS[t.type].levels[t.level - 1];
-    drawRangeCircle(t.x, t.y, st.range, P.gold);
+    drawRangeCircle(t.x, t.y, t.st.range, P.gold);
     ctx.globalAlpha = 0.9;
     r(t.c * TILE, FY + t.r * TILE, TILE, 1, P.gold2);
     r(t.c * TILE, FY + t.r * TILE + TILE - 1, TILE, 1, P.gold2);
@@ -2174,8 +2188,7 @@ function drawSelection() {
   if (!tile) return;
   var hov = towerAt(tile.c, tile.r);
   if (!hov) return;
-  var st2 = TOWERS[hov.type].levels[hov.level - 1];
-  drawRangeCircle(hov.x, hov.y, st2.range, 'rgba(242,237,220,0.8)');
+  drawRangeCircle(hov.x, hov.y, hov.st.range, 'rgba(242,237,220,0.8)');
   r(hov.c * TILE, FY + hov.r * TILE, TILE, 1, 'rgba(242,237,220,0.45)');
   r(hov.c * TILE, FY + hov.r * TILE + TILE - 1, TILE, 1, 'rgba(242,237,220,0.45)');
   r(hov.c * TILE, FY + hov.r * TILE, 1, TILE, 'rgba(242,237,220,0.45)');
@@ -2497,8 +2510,6 @@ window.addEventListener('keydown', function (e) {
     G.selected = null;
   } else if (k === 's') {
     G.speed = G.speed === 1 ? 2 : 1;
-  } else if (k === 'u') {
-    upgradeSelected();
   } else if (k === 'x') {
     sellSelected();
   } else if (k === 'p') {
